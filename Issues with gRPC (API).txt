@@ -1,0 +1,24 @@
+1. gRPC communication on IPv4/IPv6 addresses? Why listen error on IPv6 address?
+    Test with IPv4: Works fine.
+    Tested with IPv6: Works fine, when tested with the IPv6 loopback address.
+    Shall ideally work fine with other IPv6 addresses as well. But my system kept generating error: 'Temporary failure in name resolution' when trying to bind gRPC server instance on any other IPv6 address. Probably, some problem with IPv6 networking in my VM, since the normal python socket bind on IPv6 address also generated the same error. Probably, someone can verify this.
+
+2. Note: gRPC seems to have LIFO queue of outgoing messages. For example, while gRPC is waiting for client-to-server connection to complete (and probably under load situations too), it queues all the messages/RPC-calls client has to send. Upon completion of the connection to server, gRPC client node sends these queued messages as part of one long HTTP2 message containing different DATA headers (i.e. one data header for each message/RPC-call). However, these DATA headers are arranged in LIFO style within HTTP2 message compared to the order of messages sent by gRPC client. As a result, the message that was sent first will be processed last by the gRPC server.
+    Using gRPC for CETP negotiation means that our first host that sent the first DNS message (and resulted in triggering of CETP negotiation), will suffer the most delay. As its message will be processed by gRPC server, only after all the other messages are processed. In updated gRPC versions, if this ordering of messages is changed to FIFO, this shall solve the problem.
+        
+3. gRPC API doesn't offer any method for detecting if remote end, (i.e. client or server) has closed the connection. 
+    It does report some status changes of the communication channel (to the client side), e.g. when a client becomes IDLE, is still CONNECTING, or Ready to send message. 
+    However, 
+    	a) the API forever re-attempts the connection establishment with an remote address, even if the remote address had sent RST packet (due to no unavailability of service port).
+    	b) the API doesn't report if the connected remote peer has closed the connection (OR has simply disappeared).
+		c) And if you do want to close a connection, gRPC API doesn't offer any hooks to close the communication channel.
+		
+		
+4. The gRPC server implementation doesn't provide a separate object (or client instance) for each connected client.
+5. The gRPC server API inherently queues all the messages received from all the client, and processes them one by one. It picks the next message, only after it is done with the previous message.
+   (The API implementation doesn't make use of parallelism offered by HTTP2).
+
+6. gRPC is incompatible with 'asyncio' framework. Though, we can have a work around for client implementation, but server implementation is not compatible with 'asyncio'.
+   The main reason is that python doesn't have a standard Future implementation. As a result 'asyncio' framework is only compatible with 'asyncio.Future' and not with 'grpc.Future'
+
+7. Since gRPC is implemented as client/server model. So, it will not be possible to send (CETP) messages from server to client. 
